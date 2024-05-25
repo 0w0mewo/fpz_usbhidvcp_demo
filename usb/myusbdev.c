@@ -456,7 +456,11 @@ void cdc_send(const uint8_t* buf, uint16_t len) {
         return;
     }
 
-    furi_check(furi_semaphore_acquire(cdc_tx_semaphore, FuriWaitForever) == FuriStatusOk);
+    FuriStatus s = furi_semaphore_acquire(cdc_tx_semaphore, SENSOR_POLL_PERIOD * 2);
+    if(s == FuriStatusErrorTimeout) {
+        return;
+    }
+    furi_check(s == FuriStatusOk);
 
     if(usb_connected) {
         usbd_ep_write(usb_dev, CDC_EP_TXD, buf, len);
