@@ -358,9 +358,7 @@ static void composite_on_suspend(usbd_device* dev) {
     if(usb_connected) {
         usb_connected = false;
         furi_semaphore_release(hid_sensor_semaphore);
-#if WITH_VCP == 1
         furi_semaphore_release(cdc_tx_semaphore);
-#endif
     }
 }
 
