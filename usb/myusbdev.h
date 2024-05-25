@@ -21,7 +21,7 @@
 #define HID_EP_PACKET_SIZE 16
 #define HID_EP_IN 0x82
 #define HID_EP_OUT 0x01
-#define HID_INTERVAL 5
+#define HID_INTERVAL 32
 
 #define HID_FEATURE_REPORT_TYPE 0x0300
 

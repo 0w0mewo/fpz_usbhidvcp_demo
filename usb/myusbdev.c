@@ -155,6 +155,7 @@ static const struct CompositeConfigDescriptor
                 },
             .iad_0 =
                 {
+#if WITH_VCP == 0
                     .hid_iad =
                         {
                             .bLength = sizeof(struct usb_iad_descriptor),
@@ -166,6 +167,7 @@ static const struct CompositeConfigDescriptor
                             .bFunctionProtocol = USB_PROTO_NONE,
                             .iFunction = NO_DESCRIPTOR,
                         },
+#endif
                     .hid =
                         {
                             .bLength = sizeof(struct usb_interface_descriptor),
@@ -436,7 +438,7 @@ static void hid_sensor_send_response(uint8_t* data, uint8_t len) {
     furi_check(s == FuriStatusOk);
 
     if(usb_connected) {
-        usbd_ep_write(usb_dev, HID_EP_OUT, data, len);
+        usbd_ep_write(usb_dev, HID_EP_IN, data, len);
     }
 }
 

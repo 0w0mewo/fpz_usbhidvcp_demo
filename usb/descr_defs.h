@@ -7,7 +7,9 @@
 #include "config.h"
 
 struct HidIadDescriptor {
+#if WITH_VCP == 0
     struct usb_iad_descriptor hid_iad;
+#endif
     struct usb_interface_descriptor hid;
     struct usb_hid_descriptor hid_desc;
     struct usb_endpoint_descriptor hid_ep_in;
