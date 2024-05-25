@@ -23,8 +23,6 @@
 #define HID_EP_OUT 0x01
 #define HID_INTERVAL 32
 
-#define HID_FEATURE_REPORT_TYPE 0x0300
-
 #define SENSOR_STATE_UNKNOWN 0x00
 #define SENSOR_STATE_READY 0x01
 #define SENSOR_STATE_NOT_AVAILABLE 0x02
@@ -42,6 +40,8 @@
 #define SENSOR_TEMPC_MIN (-50)
 
 #define LOG_TAG "hellousb"
+
+#define HIGH8_WORD(x) ((x >> 8) & 0xff)
 
 struct HidSensorTempReport {
     uint8_t state;
