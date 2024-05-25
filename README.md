@@ -7,5 +7,9 @@ A simple demo to capture on-die temperature and report it through USB HID and pr
 ### How to use
 
 `ok`: start/stop.
-
 `long press on back`: exit
+
+Known issues:
+
+- The HID sensor is not recognisable by Windows if CDC also emulated. Therefore, To turn off logging to VCP in order to emulate temperature sensor properly, toggle `WITH_VCP` to `0` at `usb/config.h` and re-compile the FAP.
+- Linux kernel fails to probe the HID sensor as a HID sensor but a generic HID device. However, VCP works perfectly.

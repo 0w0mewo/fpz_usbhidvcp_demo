@@ -4,14 +4,17 @@
 #include "usb.h"
 #include "usb_hid.h"
 #include "usb_cdc.h"
+#include "config.h"
 
 struct HidIadDescriptor {
     struct usb_iad_descriptor hid_iad;
     struct usb_interface_descriptor hid;
     struct usb_hid_descriptor hid_desc;
     struct usb_endpoint_descriptor hid_ep_in;
+    struct usb_endpoint_descriptor hid_ep_out;
 };
 
+#if WITH_VCP == 1
 struct CdcIadDescriptor {
     struct usb_iad_descriptor comm_iad;
     struct usb_interface_descriptor comm;
@@ -24,10 +27,13 @@ struct CdcIadDescriptor {
     struct usb_endpoint_descriptor data_eprx;
     struct usb_endpoint_descriptor data_eptx;
 };
+#endif
 
 struct CompositeConfigDescriptor {
     struct usb_config_descriptor config;
     struct HidIadDescriptor iad_0;
+#if WITH_VCP == 1
     struct CdcIadDescriptor iad_1;
+#endif
 } FURI_PACKED;
 #endif
