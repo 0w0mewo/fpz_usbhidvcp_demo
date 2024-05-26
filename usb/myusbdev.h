@@ -44,11 +44,41 @@
 
 #define HIGH8_WORD(x) ((x >> 8) & 0xff)
 
+typedef enum { IntfTypeHIDsensor, IntfTypeCDC } IntfType;
+
+typedef void (*CompositeRxCallback)(IntfType which, void* context);
+
+struct TempSensorFeature {
+    uint16_t min_interval;
+    uint16_t interval;
+    int16_t max_temp;
+    int16_t min_temp;
+} FURI_PACKED;
+
 struct HidSensorTempReport {
     uint8_t state;
     uint8_t event;
     int16_t temperature;
 } FURI_PACKED;
+
+struct CompositeUsbDevice {
+    usbd_device* usb_dev;
+    FuriHalUsbInterface* prev_intf;
+    bool usb_connected;
+
+    // cdc stuffs
+    struct usb_cdc_line_coding cdc_config;
+    uint8_t cdc_ctrl_line_state;
+
+    // hid sensor stuffs
+    struct TempSensorFeature sensor_feature_report;
+
+    // tx semaphores
+    FuriSemaphore* hid_sensor_semaphore;
+    FuriSemaphore* cdc_tx_semaphore;
+
+    // CompositeRxCallback rx_cb;
+};
 
 FuriStatus composite_connect();
 FuriStatus composite_disconnect();
