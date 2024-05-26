@@ -261,7 +261,7 @@ static const struct CompositeConfigDescriptor composite_cfg_desc =
              {
                  .bLength = sizeof(struct usb_endpoint_descriptor),
                  .bDescriptorType = USB_DTYPE_ENDPOINT,
-                 .bEndpointAddress = CDC_EP_TXD,
+                 .bEndpointAddress = CDC_EP_IN,
                  .bmAttributes = USB_EPTYPE_BULK,
                  .wMaxPacketSize = CDC_EP_PACKET_SIZE,
                  .bInterval = 0x01,
@@ -270,7 +270,7 @@ static const struct CompositeConfigDescriptor composite_cfg_desc =
              {
                  .bLength = sizeof(struct usb_endpoint_descriptor),
                  .bDescriptorType = USB_DTYPE_ENDPOINT,
-                 .bEndpointAddress = CDC_EP_RXD,
+                 .bEndpointAddress = CDC_EP_OUT,
                  .bmAttributes = USB_EPTYPE_BULK,
                  .wMaxPacketSize = CDC_EP_PACKET_SIZE,
                  .bInterval = 0x01,
@@ -365,7 +365,7 @@ static void usb_tx_ep_callback(usbd_device* dev, uint8_t event, uint8_t ep) {
     if(ep == HID_EP_IN) {
         furi_semaphore_release(usbd.hid_sensor_semaphore);
     }
-    if(ep == CDC_EP_TXD) {
+    if(ep == CDC_EP_IN) {
         furi_semaphore_release(usbd.cdc_tx_semaphore);
     }
 }
@@ -410,10 +410,10 @@ static usbd_respond composite_ep_config(usbd_device* dev, uint8_t cfg) {
         usbd_reg_endpoint(dev, HID_EP_OUT, 0);
 
         usbd_ep_deconfig(dev, CDC_EP_NTF);
-        usbd_ep_deconfig(dev, CDC_EP_TXD);
-        usbd_ep_deconfig(dev, CDC_EP_RXD);
-        usbd_reg_endpoint(dev, CDC_EP_TXD, 0);
-        usbd_reg_endpoint(dev, CDC_EP_RXD, 0);
+        usbd_ep_deconfig(dev, CDC_EP_IN);
+        usbd_ep_deconfig(dev, CDC_EP_OUT);
+        usbd_reg_endpoint(dev, CDC_EP_IN, 0);
+        usbd_reg_endpoint(dev, CDC_EP_OUT, 0);
 
         return usbd_ack;
     case 1:
@@ -424,12 +424,12 @@ static usbd_respond composite_ep_config(usbd_device* dev, uint8_t cfg) {
         usbd_reg_endpoint(dev, HID_EP_OUT, usb_txrx_ep_callback);
         usbd_ep_write(dev, HID_EP_IN, 0, 0);
 
-        usbd_ep_config(dev, CDC_EP_TXD, USB_EPTYPE_BULK, CDC_EP_PACKET_SIZE);
-        usbd_ep_config(dev, CDC_EP_RXD, USB_EPTYPE_BULK, CDC_EP_PACKET_SIZE);
+        usbd_ep_config(dev, CDC_EP_IN, USB_EPTYPE_BULK, CDC_EP_PACKET_SIZE);
+        usbd_ep_config(dev, CDC_EP_OUT, USB_EPTYPE_BULK, CDC_EP_PACKET_SIZE);
         usbd_ep_config(dev, CDC_EP_NTF, USB_EPTYPE_INTERRUPT, CDC_EP_NTF_PACKETSIZE);
-        usbd_reg_endpoint(dev, CDC_EP_TXD, usb_txrx_ep_callback);
-        usbd_reg_endpoint(dev, CDC_EP_RXD, usb_txrx_ep_callback);
-        usbd_ep_write(dev, CDC_EP_TXD, 0, 0);
+        usbd_reg_endpoint(dev, CDC_EP_IN, usb_txrx_ep_callback);
+        usbd_reg_endpoint(dev, CDC_EP_OUT, usb_txrx_ep_callback);
+        usbd_ep_write(dev, CDC_EP_IN, 0, 0);
 
         return usbd_ack;
     default:
@@ -590,7 +590,7 @@ void composite_cdc_send(const uint8_t* buf, uint16_t len) {
     furi_check(s == FuriStatusOk);
 
     if(usbd.usb_connected) {
-        usbd_ep_write(usbd.usb_dev, CDC_EP_TXD, buf, len);
+        usbd_ep_write(usbd.usb_dev, CDC_EP_IN, buf, len);
     }
 }
 

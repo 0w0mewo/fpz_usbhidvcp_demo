@@ -13,8 +13,8 @@
 #define USBD_VID 0x0483
 #define USBD_PID 0x5741
 
-#define CDC_EP_RXD 0x04
-#define CDC_EP_TXD 0x85
+#define CDC_EP_OUT 0x04
+#define CDC_EP_IN 0x85
 #define CDC_EP_NTF 0x86
 #define CDC_EP_NTF_PACKETSIZE 0x08
 #define CDC_EP_PACKET_SIZE 64
