@@ -321,6 +321,7 @@ static void composite_init(usbd_device* dev, FuriHalUsbInterface* intf, void* ct
     if(cdc_tx_semaphore == NULL) {
         cdc_tx_semaphore = furi_semaphore_alloc(1, 1);
     }
+
     usb_dev = dev;
 
     usbd_reg_config(dev, composite_ep_config);
@@ -332,6 +333,9 @@ static void composite_init(usbd_device* dev, FuriHalUsbInterface* intf, void* ct
 static void composite_deinit(usbd_device* dev) {
     usbd_reg_config(dev, NULL);
     usbd_reg_control(dev, NULL);
+
+    furi_semaphore_free(hid_sensor_semaphore);
+    furi_semaphore_free(cdc_tx_semaphore);
 }
 
 static void composite_on_wakeup(usbd_device* dev) {
