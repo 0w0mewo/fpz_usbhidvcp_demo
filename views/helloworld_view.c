@@ -7,23 +7,12 @@ static void view_on_enter(void* ctx);
 static void view_on_draw(Canvas* canvas, void* ctx);
 static bool view_on_input(InputEvent* event, void* ctx);
 static void timer_cb(void* ctx);
-static void log_callback(const uint8_t* data, size_t size, void* context);
-
-static FuriLogHandler log_handler = {.callback = log_callback, .context = NULL};
 
 HelloWorldView* helloworld_view_new() {
     HelloWorldView* hwv = (HelloWorldView*)(malloc(sizeof(HelloWorldView)));
 
     // config usb
-    hwv->prev_usb_interface = furi_hal_usb_get_config();
-    if(furi_hal_usb_is_locked()) {
-        FURI_LOG_E(LOG_TAG, "usb is locked by other threads");
-    } else {
-        furi_hal_usb_set_config(&hid_with_cdc_intf, NULL);
-    }
-
-    // print logs to usb cdc
-    furi_log_add_handler(log_handler);
+    composite_connect();
 
     // allocate view
     hwv->view = view_alloc();
@@ -53,8 +42,7 @@ void helloworld_view_delete(HelloWorldView* hwv) {
     furi_timer_free(hwv->timer);
 
     // restore usb config
-    furi_log_remove_handler(log_handler);
-    furi_hal_usb_set_config(hwv->prev_usb_interface, NULL);
+    composite_disconnect();
 
     free(hwv);
 }
@@ -146,21 +134,5 @@ static bool view_on_input(InputEvent* event, void* ctx) {
 static void timer_cb(void* ctx) {
     furi_assert(ctx);
 
-    FuriHalAdcHandle* temp_adc = furi_hal_adc_acquire();
-    furi_hal_adc_configure(temp_adc);
-
-    float temp_raw = furi_hal_adc_convert_temp(
-        temp_adc, furi_hal_adc_read(temp_adc, FuriHalAdcChannelTEMPSENSOR));
-    furi_hal_adc_release(temp_adc);
-
-    FURI_LOG_I(LOG_TAG, "temperature: %.2f\n\r", (double)temp_raw);
-
-    temp_raw = temp_raw * 100;
-    hid_send_temp_report((int16_t)(temp_raw));
-}
-
-static void log_callback(const uint8_t* data, size_t size, void* context) {
-    UNUSED(context);
-
-    cdc_send(data, size);
+    composite_hid_send_temp();
 }

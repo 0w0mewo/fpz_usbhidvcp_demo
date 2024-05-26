@@ -292,7 +292,10 @@ static usbd_respond composite_ep_config(usbd_device* dev, uint8_t cfg);
 static usbd_respond
     composite_ctrlreq_handler(usbd_device* dev, usbd_ctlreq* req, usbd_rqc_callback* callback);
 
+static void log_callback(const uint8_t* data, size_t size, void* context);
+
 static usbd_device* usb_dev;
+static FuriHalUsbInterface* prev_intf;
 static struct usb_cdc_line_coding cdc_config = {};
 static uint8_t cdc_ctrl_line_state;
 static bool usb_connected = false;
@@ -300,29 +303,12 @@ static bool usb_connected = false;
 static FuriSemaphore* hid_sensor_semaphore = NULL;
 static FuriSemaphore* cdc_tx_semaphore = NULL;
 
+static FuriLogHandler log_handler = {.callback = log_callback, .context = NULL};
+
 static struct HidSensorTempReport tempature_report = {
     .state = SENSOR_STATE_UNKNOWN,
     .event = SENSOR_EVENT_UNKNOWN,
     .temperature = 0};
-
-bool usbdev_is_connected(void) {
-    return usb_connected;
-}
-
-FuriHalUsbInterface hid_with_cdc_intf = {
-    .init = composite_init,
-    .deinit = composite_deinit,
-    .wakeup = composite_on_wakeup,
-    .suspend = composite_on_suspend,
-
-    .dev_descr = (struct usb_device_descriptor*)&hid_sensor_device_desc,
-
-    .str_manuf_descr = (void*)&dev_manuf_desc,
-    .str_prod_descr = (void*)&dev_prod_desc,
-    .str_serial_descr = (void*)&dev_serial_desc,
-
-    .cfg_descr = (void*)&composite_cfg_desc,
-};
 
 static void composite_init(usbd_device* dev, FuriHalUsbInterface* intf, void* ctx) {
     UNUSED(intf);
@@ -410,30 +396,6 @@ static void hid_sensor_send_response(uint8_t* data, uint8_t len) {
     }
 }
 
-void hid_send_temp_report(int16_t temp_raw) {
-    tempature_report.temperature = temp_raw;
-    tempature_report.event = SENSOR_EVENT_DATA_UPDATED;
-    tempature_report.state = SENSOR_STATE_READY;
-
-    hid_sensor_send_response((uint8_t*)&tempature_report, sizeof(tempature_report));
-}
-
-void cdc_send(const uint8_t* buf, uint16_t len) {
-    if((cdc_tx_semaphore == NULL) || !usb_connected) {
-        return;
-    }
-
-    FuriStatus s = furi_semaphore_acquire(cdc_tx_semaphore, SENSOR_POLL_PERIOD * 2);
-    if(s == FuriStatusErrorTimeout) {
-        return;
-    }
-    furi_check(s == FuriStatusOk);
-
-    if(usb_connected) {
-        usbd_ep_write(usb_dev, CDC_EP_TXD, buf, len);
-    }
-}
-
 /* Configure endpoints */
 static usbd_respond composite_ep_config(usbd_device* dev, uint8_t cfg) {
     switch(cfg) {
@@ -505,7 +467,7 @@ static usbd_respond
         }
     }
 
-    /* HID control requests */
+    /* HID */
     if(((USB_REQ_RECIPIENT | USB_REQ_TYPE) & req->bmRequestType) ==
            (USB_REQ_INTERFACE | USB_REQ_CLASS) &&
        req->wIndex == 0) {
@@ -549,6 +511,7 @@ static usbd_respond
             return usbd_fail;
         }
     }
+
     if(((USB_REQ_RECIPIENT | USB_REQ_TYPE) & req->bmRequestType) ==
            (USB_REQ_INTERFACE | USB_REQ_STANDARD) &&
        req->wIndex == 0 && req->bRequest == USB_STD_GET_DESCRIPTOR) {
@@ -572,4 +535,90 @@ static usbd_respond
 
     FURI_LOG_E(LOG_TAG, "Unimplemented usb hid feature");
     return usbd_fail;
+}
+
+static FuriHalUsbInterface hid_with_cdc_intf = {
+    .init = composite_init,
+    .deinit = composite_deinit,
+    .wakeup = composite_on_wakeup,
+    .suspend = composite_on_suspend,
+
+    .dev_descr = (struct usb_device_descriptor*)&hid_sensor_device_desc,
+
+    .str_manuf_descr = (void*)&dev_manuf_desc,
+    .str_prod_descr = (void*)&dev_prod_desc,
+    .str_serial_descr = (void*)&dev_serial_desc,
+
+    .cfg_descr = (void*)&composite_cfg_desc,
+};
+
+void composite_hid_send_temp_report(int16_t temp_raw) {
+    tempature_report.temperature = temp_raw;
+    tempature_report.event = SENSOR_EVENT_DATA_UPDATED;
+    tempature_report.state = SENSOR_STATE_READY;
+
+    hid_sensor_send_response((uint8_t*)&tempature_report, sizeof(tempature_report));
+}
+
+void composite_hid_send_temp() {
+    FuriHalAdcHandle* temp_adc = furi_hal_adc_acquire();
+    furi_hal_adc_configure(temp_adc);
+
+    float temp_raw = furi_hal_adc_convert_temp(
+        temp_adc, furi_hal_adc_read(temp_adc, FuriHalAdcChannelTEMPSENSOR));
+    furi_hal_adc_release(temp_adc);
+
+    FURI_LOG_I(LOG_TAG, "temperature: %.2f\n\r", (double)temp_raw);
+
+    temp_raw = temp_raw * 100;
+
+    composite_hid_send_temp_report((int16_t)temp_raw);
+}
+
+void composite_cdc_send(const uint8_t* buf, uint16_t len) {
+    if((cdc_tx_semaphore == NULL) || !usb_connected) {
+        return;
+    }
+
+    FuriStatus s = furi_semaphore_acquire(cdc_tx_semaphore, SENSOR_POLL_PERIOD * 2);
+    if(s == FuriStatusErrorTimeout) {
+        return;
+    }
+    furi_check(s == FuriStatusOk);
+
+    if(usb_connected) {
+        usbd_ep_write(usb_dev, CDC_EP_TXD, buf, len);
+    }
+}
+
+bool composite_is_connected(void) {
+    return usb_connected;
+}
+
+FuriStatus composite_connect() {
+    if(furi_hal_usb_is_locked()) {
+        FURI_LOG_E(LOG_TAG, "usb is locked by other threads");
+        return FuriStatusError;
+    } else {
+        prev_intf = furi_hal_usb_get_config();
+        furi_hal_usb_set_config(&hid_with_cdc_intf, NULL);
+
+        // print logs to usb cdc
+        furi_log_add_handler(log_handler);
+
+        return FuriStatusOk;
+    }
+}
+
+FuriStatus composite_disconnect() {
+    furi_hal_usb_set_config(prev_intf, NULL);
+    furi_log_remove_handler(log_handler);
+
+    return FuriStatusOk;
+}
+
+static void log_callback(const uint8_t* data, size_t size, void* context) {
+    UNUSED(context);
+
+    composite_cdc_send(data, size);
 }

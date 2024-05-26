@@ -4,6 +4,7 @@
 #include <furi_hal_usb.h>
 #include <furi_hal_usb_i.h>
 #include <furi.h>
+#include <furi_hal.h>
 #include "usb_cdc.h"
 #include "usb_hid.h"
 #include "descr_defs.h"
@@ -49,10 +50,11 @@ struct HidSensorTempReport {
     int16_t temperature;
 } FURI_PACKED;
 
-extern FuriHalUsbInterface hid_with_cdc_intf;
-
-bool usbdev_is_connected(void);
-void hid_send_temp_report(int16_t temp_raw);
-void cdc_send(const uint8_t* data, uint16_t sz);
+FuriStatus composite_connect();
+FuriStatus composite_disconnect();
+bool composite_is_connected(void);
+void composite_hid_send_temp_report(int16_t temp_raw);
+void composite_hid_send_temp();
+void composite_cdc_send(const uint8_t* data, uint16_t sz);
 
 #endif
