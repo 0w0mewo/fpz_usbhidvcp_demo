@@ -290,6 +290,8 @@ static usbd_respond
 static CdcCallbacks cdc_cbs;
 static HidCallbacks hid_cbs;
 
+static Cli* cli_handle;
+
 static struct CompositeUsbDevice usbd = {
     .usb_dev = NULL,
     .prev_intf = NULL,
@@ -702,10 +704,22 @@ FuriStatus composite_connect() {
     // print logs to usb cdc
     furi_log_add_handler(log_handler);
 
+    // connect to cli
+    // FIXME: NOT WORKING SOMEHOW
+    cli_handle = furi_record_open(RECORD_CLI);
+    cli_session_open(cli_handle, &my_cli_vcp);
+    cli_session_close(cli_handle);
+
     return FuriStatusOk;
 }
 
 FuriStatus composite_disconnect() {
+    // kill cli session
+    cli_handle = furi_record_open(RECORD_CLI);
+    cli_session_close(cli_handle);
+    cli_session_open(cli_handle, &cli_vcp); // restore cli vcp
+    furi_record_close(RECORD_CLI);
+
     // kill logging redirection
     furi_log_remove_handler(log_handler);
 
