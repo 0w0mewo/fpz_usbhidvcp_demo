@@ -1,6 +1,8 @@
 #include <furi.h>
 #include <furi_hal_version.h>
+#include <cli/cli.h>
 #include "myusbdev.h"
+#include "my_cli_vcp.h"
 
 /* TODO: HID report: sensor */
 static const uint8_t hid_sensor_report_desc[] = {
@@ -285,6 +287,9 @@ static usbd_respond composite_ep_config(usbd_device* dev, uint8_t cfg);
 static usbd_respond
     composite_ctrlreq_handler(usbd_device* dev, usbd_ctlreq* req, usbd_rqc_callback* callback);
 
+static CdcCallbacks cdc_cbs;
+static HidCallbacks hid_cbs;
+
 static struct CompositeUsbDevice usbd = {
     .usb_dev = NULL,
     .prev_intf = NULL,
@@ -299,7 +304,11 @@ static struct CompositeUsbDevice usbd = {
             .min_temp = SENSOR_TEMPC_MIN * 100,
         },
     .cdc_tx_semaphore = NULL,
-    .hid_sensor_semaphore = NULL};
+    .hid_sensor_semaphore = NULL,
+    .cdc_callbacks = &cdc_cbs,
+    .cdc_cb_ctx = NULL,
+    .hid_callbacks = &hid_cbs,
+    .hid_cb_ctx = NULL};
 
 static void log_callback(const uint8_t* data, size_t size, void* context);
 static FuriLogHandler log_handler = {.callback = log_callback, .context = NULL};
@@ -340,6 +349,11 @@ static void composite_deinit(usbd_device* dev) {
 static void composite_on_wakeup(usbd_device* dev) {
     UNUSED(dev);
     usbd.usb_connected = true;
+
+    if(usbd.cdc_callbacks != NULL) {
+        if(usbd.cdc_callbacks->state_callback != NULL)
+            usbd.cdc_callbacks->state_callback(usbd.cdc_cb_ctx, 1);
+    }
 }
 
 static void composite_on_suspend(usbd_device* dev) {
@@ -349,12 +363,33 @@ static void composite_on_suspend(usbd_device* dev) {
         furi_semaphore_release(usbd.hid_sensor_semaphore);
         furi_semaphore_release(usbd.cdc_tx_semaphore);
     }
+
+    if(usbd.cdc_callbacks != NULL) {
+        if(usbd.cdc_callbacks->state_callback != NULL)
+            usbd.cdc_callbacks->state_callback(usbd.cdc_cb_ctx, 0);
+    }
 }
 
 static void usb_rx_ep_callback(usbd_device* dev, uint8_t event, uint8_t ep) {
     UNUSED(dev);
     UNUSED(event);
     UNUSED(ep);
+
+    if(ep == CDC_EP_OUT) {
+        if(usbd.cdc_callbacks != NULL) {
+            if(usbd.cdc_callbacks->rx_ep_callback != NULL) {
+                usbd.cdc_callbacks->rx_ep_callback(usbd.cdc_cb_ctx);
+            }
+        }
+    }
+
+    if(ep == HID_EP_OUT) {
+        if(usbd.hid_callbacks != NULL) {
+            if(usbd.hid_callbacks->rx_ep_callback != NULL) {
+                usbd.hid_callbacks->rx_ep_callback(usbd.hid_cb_ctx);
+            }
+        }
+    }
 }
 
 static void usb_tx_ep_callback(usbd_device* dev, uint8_t event, uint8_t ep) {
@@ -364,9 +399,22 @@ static void usb_tx_ep_callback(usbd_device* dev, uint8_t event, uint8_t ep) {
 
     if(ep == HID_EP_IN) {
         furi_semaphore_release(usbd.hid_sensor_semaphore);
+
+        if(usbd.hid_callbacks != NULL) {
+            if(usbd.hid_callbacks->tx_ep_callback != NULL) {
+                usbd.hid_callbacks->tx_ep_callback(usbd.hid_cb_ctx);
+            }
+        }
     }
-    if(ep == CDC_EP_IN) {
+
+    if(ep == CDC_EP_IN || ep == CDC_EP_NTF) {
         furi_semaphore_release(usbd.cdc_tx_semaphore);
+
+        if(usbd.cdc_callbacks != NULL) {
+            if(usbd.cdc_callbacks->tx_ep_callback != NULL) {
+                usbd.cdc_callbacks->tx_ep_callback(usbd.cdc_cb_ctx);
+            }
+        }
     }
 }
 
@@ -449,12 +497,21 @@ static usbd_respond
         switch(req->bRequest) {
         case USB_CDC_SET_CONTROL_LINE_STATE:
             usbd.cdc_ctrl_line_state = req->wValue;
+            if(usbd.cdc_callbacks != NULL) {
+                if(usbd.cdc_callbacks->ctrl_line_callback != NULL) {
+                    usbd.cdc_callbacks->ctrl_line_callback(usbd.cdc_cb_ctx, req->wValue);
+                }
+            }
 
             return usbd_ack;
 
         case USB_CDC_SET_LINE_CODING:
             memcpy(&usbd.cdc_config, req->data, sizeof(usbd.cdc_config));
-
+            if(usbd.cdc_callbacks != NULL) {
+                if(usbd.cdc_callbacks->config_callback != NULL) {
+                    usbd.cdc_callbacks->config_callback(usbd.cdc_cb_ctx, &usbd.cdc_config);
+                }
+            }
             return usbd_ack;
 
         case USB_CDC_GET_LINE_CODING:
@@ -540,7 +597,7 @@ static usbd_respond
     return usbd_fail;
 }
 
-static FuriHalUsbInterface hid_with_cdc_intf = {
+FuriHalUsbInterface hid_with_cdc_intf = {
     .init = composite_init,
     .deinit = composite_deinit,
     .wakeup = composite_on_wakeup,
@@ -571,11 +628,45 @@ void composite_hid_send_temp() {
         temp_adc, furi_hal_adc_read(temp_adc, FuriHalAdcChannelTEMPSENSOR));
     furi_hal_adc_release(temp_adc);
 
-    FURI_LOG_I(LOG_TAG, "temperature: %.2f\n", (double)temp_raw);
+    FURI_LOG_I(LOG_TAG, "temperature: %.2f", (double)temp_raw);
 
     temp_raw = temp_raw * 100;
 
     composite_hid_send_temp_report((int16_t)temp_raw);
+}
+
+void composite_cdc_set_callbacks(CdcCallbacks* cb, void* context) {
+    if(usbd.cdc_callbacks != NULL) {
+        if(usbd.cdc_callbacks->state_callback != NULL) {
+            if(usbd.usb_connected == true) usbd.cdc_callbacks->state_callback(usbd.cdc_cb_ctx, 0);
+        }
+    }
+
+    usbd.cdc_callbacks = cb;
+    usbd.cdc_cb_ctx = context;
+
+    if(usbd.cdc_callbacks != NULL) {
+        if(usbd.cdc_callbacks->state_callback != NULL) {
+            if(usbd.usb_connected == true) usbd.cdc_callbacks->state_callback(usbd.cdc_cb_ctx, 1);
+        }
+        if(usbd.cdc_callbacks->ctrl_line_callback != NULL) {
+            usbd.cdc_callbacks->ctrl_line_callback(usbd.cdc_cb_ctx, usbd.cdc_ctrl_line_state);
+        }
+    }
+}
+
+void composite_hid_set_callbacks(HidCallbacks* cb, void* context) {
+    if(usbd.hid_callbacks != NULL) {
+        usbd.hid_callbacks = cb;
+        usbd.hid_callbacks = context;
+    }
+}
+
+int32_t composite_cdc_receive(uint8_t* buf, uint16_t sz) {
+    int32_t len = 0;
+    len = usbd_ep_read(usbd.usb_dev, CDC_EP_OUT, buf, sz);
+
+    return ((len < 0) ? 0 : len);
 }
 
 void composite_cdc_send(const uint8_t* buf, uint16_t len) {
@@ -602,20 +693,24 @@ FuriStatus composite_connect() {
     if(furi_hal_usb_is_locked()) {
         FURI_LOG_E(LOG_TAG, "usb is locked by other threads");
         return FuriStatusError;
-    } else {
-        usbd.prev_intf = furi_hal_usb_get_config();
-        furi_hal_usb_set_config(&hid_with_cdc_intf, NULL);
-
-        // print logs to usb cdc
-        furi_log_add_handler(log_handler);
-
-        return FuriStatusOk;
     }
+
+    usbd.prev_intf = furi_hal_usb_get_config();
+    furi_hal_usb_unlock();
+    furi_hal_usb_set_config(&hid_with_cdc_intf, NULL);
+
+    // print logs to usb cdc
+    furi_log_add_handler(log_handler);
+
+    return FuriStatusOk;
 }
 
 FuriStatus composite_disconnect() {
-    furi_hal_usb_set_config(usbd.prev_intf, NULL);
+    // kill logging redirection
     furi_log_remove_handler(log_handler);
+
+    furi_hal_usb_unlock();
+    furi_hal_usb_set_config(usbd.prev_intf, NULL);
 
     return FuriStatusOk;
 }
