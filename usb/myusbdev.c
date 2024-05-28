@@ -706,7 +706,7 @@ FuriStatus composite_connect() {
     // FIXME: NOT WORKING SOMEHOW
     cli_handle = furi_record_open(RECORD_CLI);
     cli_session_open(cli_handle, &my_cli_vcp);
-    cli_session_close(cli_handle);
+    furi_record_close(RECORD_CLI);
 
     return FuriStatusOk;
 }
