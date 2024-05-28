@@ -465,7 +465,6 @@ static usbd_respond
 
         default:
             furi_crash("Unimplemented usb cdc req");
-
             return usbd_fail;
         }
     }
@@ -482,9 +481,8 @@ static usbd_respond
             switch(HIGH8_WORD(req->wValue)) {
             case USB_HID_REPORT_FEATURE:
                 // feature 0, report id is ignored
-                dev->status.data_ptr = (void*)&usbd.sensor_feature_report;
+                dev->status.data_ptr = (uint8_t*)&(usbd.sensor_feature_report);
                 dev->status.data_count = sizeof(usbd.sensor_feature_report);
-
                 break;
 
             default:
@@ -501,7 +499,6 @@ static usbd_respond
                     &usbd.sensor_feature_report,
                     (struct TempSensorFeature*)req->data,
                     MIN(req->wLength, sizeof(usbd.sensor_feature_report)));
-
                 break;
 
             default:
@@ -509,6 +506,7 @@ static usbd_respond
                 break;
             }
             return usbd_ack;
+
         default:
             furi_crash("Unimplemented usb hid req");
             return usbd_fail;
