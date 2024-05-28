@@ -21,7 +21,7 @@
 #define CDC_EP_PACKET_SIZE 64
 
 #define HID_EP_PACKET_SIZE 16
-#define HID_EP_IN 0x82
+#define HID_EP_IN 0x81
 #define HID_EP_OUT 0x01
 #define HID_INTERVAL 32
 
